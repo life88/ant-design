@@ -1,4 +1,13 @@
-import React from 'react';
+import * as React from 'react';
+import {
+  RcFile as OriRcFile,
+  UploadRequestOption as RcCustomRequestOptions,
+} from 'rc-upload/lib/interface';
+import { ProgressProps } from '../progress';
+
+export interface RcFile extends OriRcFile {
+  readonly lastModifiedDate: Date;
+}
 
 export type UploadFileStatus = 'error' | 'success' | 'done' | 'uploading' | 'removed';
 
@@ -6,72 +15,126 @@ export interface HttpRequestHeader {
   [key: string]: string;
 }
 
-export interface File {
-  uid: number;
+export interface UploadFile<T = any> {
+  uid: string;
   size: number;
   name: string;
+  fileName?: string;
+  lastModified?: number;
   lastModifiedDate?: Date;
   url?: string;
   status?: UploadFileStatus;
   percent?: number;
   thumbUrl?: string;
-  originFileObj?: File;
-  response?: string;
+  originFileObj: RcFile;
+  response?: T;
   error?: any;
+  linkProps?: any;
+  type: string;
+  xhr?: T;
+  preview?: string;
 }
 
-export interface UploadChangeParam {
-  file: File;
-  fileList: Array<File>;
+export interface UploadChangeParam<T extends object = UploadFile> {
+  // https://github.com/ant-design/ant-design/issues/14420
+  file: T;
+  fileList: UploadFile[];
   event?: { percent: number };
 }
 
 export interface ShowUploadListInterface {
   showRemoveIcon?: boolean;
   showPreviewIcon?: boolean;
+  showDownloadIcon?: boolean;
+  removeIcon?: React.ReactNode | ((file: UploadFile) => React.ReactNode);
+  downloadIcon?: React.ReactNode | ((file: UploadFile) => React.ReactNode);
 }
 
 export interface UploadLocale {
   uploading?: string;
   removeFile?: string;
+  downloadFile?: string;
   uploadError?: string;
   previewFile?: string;
 }
 
-export interface UploadProps {
-  type?: 'drag' | 'select';
+export type UploadType = 'drag' | 'select';
+export type UploadListType = 'text' | 'picture' | 'picture-card';
+export type UploadListProgressProps = Omit<ProgressProps, 'percent' | 'type'>;
+
+export type ItemRender<T = any> = (
+  originNode: React.ReactElement,
+  file: UploadFile,
+  fileList?: Array<UploadFile<T>>,
+) => React.ReactNode;
+
+type PreviewFileHandler = (file: File | Blob) => PromiseLike<string>;
+type TransformFileHandler = (
+  file: RcFile,
+) => string | Blob | File | PromiseLike<string | Blob | File>;
+
+export interface UploadProps<T = any> {
+  type?: UploadType;
   name?: string;
-  defaultFileList?: Array<File>;
-  fileList?: Array<File>;
-  action: string;
-  data?: Object | ((file: File) => any);
+  defaultFileList?: Array<UploadFile<T>>;
+  fileList?: Array<UploadFile<T>>;
+  action?: string | ((file: RcFile) => string) | ((file: RcFile) => PromiseLike<string>);
+  directory?: boolean;
+  data?: object | ((file: UploadFile<T>) => object);
+  method?: 'POST' | 'PUT' | 'PATCH' | 'post' | 'put' | 'patch';
   headers?: HttpRequestHeader;
   showUploadList?: boolean | ShowUploadListInterface;
   multiple?: boolean;
   accept?: string;
-  beforeUpload?: (file: File, FileList: File[]) => boolean | PromiseLike<any>;
+  beforeUpload?: (file: RcFile, FileList: RcFile[]) => boolean | string | Promise<void | Blob | File>;
   onChange?: (info: UploadChangeParam) => void;
-  listType?: 'text' | 'picture' | 'picture-card';
+  listType?: UploadListType;
   className?: string;
-  onPreview?: (file: File) => void;
-  onRemove?: (file: File) => void | boolean;
+  onPreview?: (file: UploadFile<T>) => void;
+  onDownload?: (file: UploadFile<T>) => void;
+  onRemove?: (file: UploadFile<T>) => void | boolean | Promise<void | boolean>;
   supportServerRender?: boolean;
   style?: React.CSSProperties;
   disabled?: boolean;
   prefixCls?: string;
-  customRequest?: (option: any) => void;
+  customRequest?: (options: RcCustomRequestOptions) => void;
   withCredentials?: boolean;
+  openFileDialogOnClick?: boolean;
   locale?: UploadLocale;
+  id?: string;
+  previewFile?: PreviewFileHandler;
+  /** @deprecated Please use `beforeUpload` directly */
+  transformFile?: TransformFileHandler;
+  iconRender?: (file: UploadFile<T>, listType?: UploadListType) => React.ReactNode;
+  isImageUrl?: (file: UploadFile) => boolean;
+  progress?: UploadListProgressProps;
+  itemRender?: ItemRender<T>;
+  /** Config max count of `fileList`. Will replace current one when `maxCount` is 1 */
+  maxCount?: number;
 }
 
-export interface UploadListProps {
-  listType?: 'text' | 'picture' | 'picture-card';
-  onPreview?: (file: File) => void;
-  onRemove?: (file: File) => void | boolean;
-  items?: Array<File>;
-  progressAttr?: Object;
+export interface UploadState<T = any> {
+  fileList: UploadFile<T>[];
+  dragState: string;
+}
+
+export interface UploadListProps<T = any> {
+  listType?: UploadListType;
+  onPreview?: (file: UploadFile<T>) => void;
+  onDownload?: (file: UploadFile<T>) => void;
+  onRemove?: (file: UploadFile<T>) => void | boolean;
+  items?: Array<UploadFile<T>>;
+  progress?: UploadListProgressProps;
   prefixCls?: string;
   showRemoveIcon?: boolean;
+  showDownloadIcon?: boolean;
   showPreviewIcon?: boolean;
+  removeIcon?: React.ReactNode | ((file: UploadFile) => React.ReactNode);
+  downloadIcon?: React.ReactNode | ((file: UploadFile) => React.ReactNode);
   locale: UploadLocale;
+  previewFile?: PreviewFileHandler;
+  iconRender?: (file: UploadFile<T>, listType?: UploadListType) => React.ReactNode;
+  isImageUrl?: (file: UploadFile) => boolean;
+  appendAction?: React.ReactNode;
+  itemRender?: ItemRender<T>;
 }

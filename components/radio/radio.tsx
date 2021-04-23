@@ -1,69 +1,66 @@
-import RcRadio from 'rc-radio';
-import React, { PropTypes } from 'react';
+import * as React from 'react';
+import RcCheckbox from 'rc-checkbox';
 import classNames from 'classnames';
-import shallowEqual from 'shallowequal';
+import { composeRef } from 'rc-util/lib/ref';
+import { RadioProps, RadioChangeEvent } from './interface';
+import { ConfigContext } from '../config-provider';
+import RadioGroupContext from './context';
+import devWarning from '../_util/devWarning';
 
-export interface RadioProps {
-  /** 指定当前是否选中*/
-  checked?: boolean;
-  /** 初始是否选中*/
-  defaultChecked?: boolean;
-  /** 根据 value 进行比较，判断是否选中  */
-  value?: any;
-  style?: React.CSSProperties;
-  prefixCls?: string;
-  disabled?: boolean;
-  className?: string;
-  onChange?: (e: any) => any;
-  onMouseEnter?: React.FormEventHandler<any>;
-  onMouseLeave?: React.FormEventHandler<any>;
-}
+const InternalRadio: React.ForwardRefRenderFunction<HTMLElement, RadioProps> = (props, ref) => {
+  const context = React.useContext(RadioGroupContext);
+  const { getPrefixCls, direction } = React.useContext(ConfigContext);
+  const innerRef = React.useRef<HTMLElement>();
+  const mergedRef = composeRef(ref, innerRef);
 
-export default class Radio extends React.Component<RadioProps, any> {
-  static Group: any;
-  static Button: any;
+  React.useEffect(() => {
+    devWarning(!('optionType' in props), 'Radio', '`optionType` is only support in Radio.Group.');
+  }, []);
 
-  static defaultProps = {
-    prefixCls: 'ant-radio',
+  const onChange = (e: RadioChangeEvent) => {
+    props.onChange?.(e);
+    context?.onChange?.(e);
   };
 
-  static contextTypes = {
-    radioGroup: PropTypes.any,
-  };
-
-  shouldComponentUpdate(nextProps, nextState, nextContext) {
-    return !shallowEqual(this.props, nextProps) ||
-           !shallowEqual(this.state, nextState) ||
-           !shallowEqual(this.context.radioGroup, nextContext.radioGroup);
+  const { prefixCls: customizePrefixCls, className, children, style, ...restProps } = props;
+  const prefixCls = getPrefixCls('radio', customizePrefixCls);
+  const radioProps: RadioProps = { ...restProps };
+  if (context) {
+    radioProps.name = context.name;
+    radioProps.onChange = onChange;
+    radioProps.checked = props.value === context.value;
+    radioProps.disabled = props.disabled || context.disabled;
   }
-
-  render() {
-    const { prefixCls, className, children, style, ...restProps } = this.props;
-    let radioProps: RadioProps = { ...restProps };
-    if (this.context.radioGroup) {
-      radioProps.onChange = this.context.radioGroup.onChange;
-      radioProps.checked = this.props.value === this.context.radioGroup.value;
-      radioProps.disabled = this.props.disabled || this.context.radioGroup.disabled;
-    }
-    const wrapperClassString = classNames({
-      [`${prefixCls}-wrapper`]: true,
+  const wrapperClassString = classNames(
+    `${prefixCls}-wrapper`,
+    {
       [`${prefixCls}-wrapper-checked`]: radioProps.checked,
       [`${prefixCls}-wrapper-disabled`]: radioProps.disabled,
-    }, className);
+      [`${prefixCls}-wrapper-rtl`]: direction === 'rtl',
+    },
+    className,
+  );
 
-    return (
-      <label
-        className={wrapperClassString}
-        style={style}
-        onMouseEnter={this.props.onMouseEnter}
-        onMouseLeave={this.props.onMouseLeave}
-      >
-        <RcRadio
-          {...radioProps}
-          prefixCls={prefixCls}
-        />
-        {children !== undefined ? <span>{children}</span> : null}
-      </label>
-    );
-  }
-}
+  return (
+    // eslint-disable-next-line jsx-a11y/label-has-associated-control
+    <label
+      className={wrapperClassString}
+      style={style}
+      onMouseEnter={props.onMouseEnter}
+      onMouseLeave={props.onMouseLeave}
+    >
+      <RcCheckbox {...radioProps} prefixCls={prefixCls} ref={mergedRef} />
+      {children !== undefined ? <span>{children}</span> : null}
+    </label>
+  );
+};
+
+const Radio = React.forwardRef<unknown, RadioProps>(InternalRadio);
+
+Radio.displayName = 'Radio';
+
+Radio.defaultProps = {
+  type: 'radio',
+};
+
+export default Radio;

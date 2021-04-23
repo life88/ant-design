@@ -1,165 +1,302 @@
-import React from 'react';
+/* eslint-disable react/button-has-type */
+import * as React from 'react';
 import classNames from 'classnames';
-import Icon from '../icon';
-import omit from 'omit.js';
+import omit from 'rc-util/lib/omit';
+
+import Group from './button-group';
+import { ConfigContext } from '../config-provider';
+import Wave from '../_util/wave';
+import { Omit, tuple } from '../_util/type';
+import devWarning from '../_util/devWarning';
+import SizeContext, { SizeType } from '../config-provider/SizeContext';
+import LoadingIcon from './LoadingIcon';
+import { cloneElement } from '../_util/reactNode';
 
 const rxTwoCNChar = /^[\u4e00-\u9fa5]{2}$/;
 const isTwoCNChar = rxTwoCNChar.test.bind(rxTwoCNChar);
-function isString(str) {
+function isString(str: any) {
   return typeof str === 'string';
 }
 
+function isUnborderedButtonType(type: ButtonType | undefined) {
+  return type === 'text' || type === 'link';
+}
+
 // Insert one space between two chinese characters automatically.
-function insertSpace(child) {
+function insertSpace(child: React.ReactChild, needInserted: boolean) {
   // Check the child if is undefined or null.
   if (child == null) {
     return;
   }
-  if (isString(child.type) && isTwoCNChar(child.props.children)) {
-    return React.cloneElement(child, {},
-                              child.props.children.split('').join(' '));
+  const SPACE = needInserted ? ' ' : '';
+  // strictNullChecks oops.
+  if (
+    typeof child !== 'string' &&
+    typeof child !== 'number' &&
+    isString(child.type) &&
+    isTwoCNChar(child.props.children)
+  ) {
+    return cloneElement(child, {
+      children: child.props.children.split('').join(SPACE),
+    });
   }
-  if (isString(child)) {
+  if (typeof child === 'string') {
     if (isTwoCNChar(child)) {
-      child = child.split('').join(' ');
+      child = child.split('').join(SPACE);
     }
     return <span>{child}</span>;
   }
   return child;
 }
 
-export type ButtonType = 'primary' | 'ghost' | 'dashed' | 'danger';
-export type ButtonShape = 'circle' | 'circle-outline';
-export type ButtonSize = 'small' | 'large';
+function spaceChildren(children: React.ReactNode, needInserted: boolean) {
+  let isPrevChildPure: boolean = false;
+  const childList: React.ReactNode[] = [];
+  React.Children.forEach(children, child => {
+    const type = typeof child;
+    const isCurrentChildPure = type === 'string' || type === 'number';
+    if (isPrevChildPure && isCurrentChildPure) {
+      const lastIndex = childList.length - 1;
+      const lastChild = childList[lastIndex];
+      childList[lastIndex] = `${lastChild}${child}`;
+    } else {
+      childList.push(child);
+    }
 
-export interface ButtonProps {
+    isPrevChildPure = isCurrentChildPure;
+  });
+
+  // Pass to React.Children.map to auto fill key
+  return React.Children.map(childList, child =>
+    insertSpace(child as React.ReactChild, needInserted),
+  );
+}
+
+const ButtonTypes = tuple('default', 'primary', 'ghost', 'dashed', 'link', 'text');
+export type ButtonType = typeof ButtonTypes[number];
+const ButtonShapes = tuple('circle', 'round');
+export type ButtonShape = typeof ButtonShapes[number];
+const ButtonHTMLTypes = tuple('submit', 'button', 'reset');
+export type ButtonHTMLType = typeof ButtonHTMLTypes[number];
+
+export type LegacyButtonType = ButtonType | 'danger';
+export function convertLegacyProps(type?: LegacyButtonType): ButtonProps {
+  if (type === 'danger') {
+    return { danger: true };
+  }
+  return { type };
+}
+
+export interface BaseButtonProps {
   type?: ButtonType;
-  htmlType?: string;
-  icon?: string;
+  icon?: React.ReactNode;
   shape?: ButtonShape;
-  size?: ButtonSize;
-  onClick?: React.FormEventHandler<any>;
-  onMouseUp?: React.FormEventHandler<any>;
+  size?: SizeType;
   loading?: boolean | { delay?: number };
-  disabled?: boolean;
-  style?: React.CSSProperties;
   prefixCls?: string;
   className?: string;
   ghost?: boolean;
+  danger?: boolean;
+  block?: boolean;
+  children?: React.ReactNode;
 }
 
-export default class Button extends React.Component<ButtonProps, any> {
-  static Group: any;
-  static __ANT_BUTTON = true;
+// Typescript will make optional not optional if use Pick with union.
+// Should change to `AnchorButtonProps | NativeButtonProps` and `any` to `HTMLAnchorElement | HTMLButtonElement` if it fixed.
+// ref: https://github.com/ant-design/ant-design/issues/15930
+export type AnchorButtonProps = {
+  href: string;
+  target?: string;
+  onClick?: React.MouseEventHandler<HTMLElement>;
+} & BaseButtonProps &
+  Omit<React.AnchorHTMLAttributes<any>, 'type' | 'onClick'>;
 
-  static defaultProps = {
-    prefixCls: 'ant-btn',
-    loading: false,
-    clicked: false,
-    ghost: false,
+export type NativeButtonProps = {
+  htmlType?: ButtonHTMLType;
+  onClick?: React.MouseEventHandler<HTMLElement>;
+} & BaseButtonProps &
+  Omit<React.ButtonHTMLAttributes<any>, 'type' | 'onClick'>;
+
+export type ButtonProps = Partial<AnchorButtonProps & NativeButtonProps>;
+
+interface CompoundedComponent
+  extends React.ForwardRefExoticComponent<ButtonProps & React.RefAttributes<HTMLElement>> {
+  Group: typeof Group;
+  __ANT_BUTTON: boolean;
+}
+
+type Loading = number | boolean;
+
+const InternalButton: React.ForwardRefRenderFunction<unknown, ButtonProps> = (props, ref) => {
+  const {
+    loading = false,
+    prefixCls: customizePrefixCls,
+    type,
+    danger,
+    shape,
+    size: customizeSize,
+    className,
+    children,
+    icon,
+    ghost = false,
+    block = false,
+    /** If we extract items here, we don't need use omit.js */
+    // React does not recognize the `htmlType` prop on a DOM element. Here we pick it out of `rest`.
+    htmlType = 'button' as ButtonProps['htmlType'],
+    ...rest
+  } = props;
+
+  const size = React.useContext(SizeContext);
+  const [innerLoading, setLoading] = React.useState<Loading>(!!loading);
+  const [hasTwoCNChar, setHasTwoCNChar] = React.useState(false);
+  const { getPrefixCls, autoInsertSpaceInButton, direction } = React.useContext(ConfigContext);
+  const buttonRef = (ref as any) || React.createRef<HTMLElement>();
+  const delayTimeoutRef = React.useRef<number>();
+
+  const isNeedInserted = () =>
+    React.Children.count(children) === 1 && !icon && !isUnborderedButtonType(type);
+
+  const fixTwoCNChar = () => {
+    // Fix for HOC usage like <FormatMessage />
+    if (!buttonRef || !buttonRef.current || autoInsertSpaceInButton === false) {
+      return;
+    }
+    const buttonText = buttonRef.current.textContent;
+    if (isNeedInserted() && isTwoCNChar(buttonText)) {
+      if (!hasTwoCNChar) {
+        setHasTwoCNChar(true);
+      }
+    } else if (hasTwoCNChar) {
+      setHasTwoCNChar(false);
+    }
   };
 
-  static propTypes = {
-    type: React.PropTypes.string,
-    shape: React.PropTypes.oneOf(['circle', 'circle-outline']),
-    size: React.PropTypes.oneOf(['large', 'default', 'small']),
-    htmlType: React.PropTypes.oneOf(['submit', 'button', 'reset']),
-    onClick: React.PropTypes.func,
-    loading: React.PropTypes.oneOfType([React.PropTypes.bool, React.PropTypes.object]),
-    className: React.PropTypes.string,
-    icon: React.PropTypes.string,
-  };
-
-  timeout: number;
-  delayTimeout: number;
-
-  constructor(props) {
-    super(props);
-    this.state = {
-      loading: props.loading,
-    };
+  // =============== Update Loading ===============
+  let loadingOrDelay: Loading;
+  if (typeof loading === 'object' && loading.delay) {
+    loadingOrDelay = loading.delay || true;
+  } else {
+    loadingOrDelay = !!loading;
   }
 
-  componentWillReceiveProps(nextProps) {
-    const currentLoading = this.props.loading;
-    const loading = nextProps.loading;
-
-    if (currentLoading) {
-      clearTimeout(this.delayTimeout);
-    }
-
-    if (loading && loading.delay) {
-      this.delayTimeout = setTimeout(() => this.setState({ loading }), loading.delay);
+  React.useEffect(() => {
+    clearTimeout(delayTimeoutRef.current);
+    if (typeof loadingOrDelay === 'number') {
+      delayTimeoutRef.current = window.setTimeout(() => {
+        setLoading(loadingOrDelay);
+      }, loadingOrDelay);
     } else {
-      this.setState({ loading });
+      setLoading(loadingOrDelay);
     }
+  }, [loadingOrDelay]);
+
+  React.useEffect(fixTwoCNChar, [buttonRef]);
+
+  const handleClick = (e: React.MouseEvent<HTMLButtonElement | HTMLAnchorElement, MouseEvent>) => {
+    const { onClick, disabled } = props;
+    // https://github.com/ant-design/ant-design/issues/30207
+    if (innerLoading || disabled) {
+      e.preventDefault();
+      return;
+    }
+    (onClick as React.MouseEventHandler<HTMLButtonElement | HTMLAnchorElement>)?.(e);
+  };
+
+  devWarning(
+    !(typeof icon === 'string' && icon.length > 2),
+    'Button',
+    `\`icon\` is using ReactNode instead of string naming in v4. Please check \`${icon}\` at https://ant.design/components/icon`,
+  );
+
+  devWarning(
+    !(ghost && isUnborderedButtonType(type)),
+    'Button',
+    "`link` or `text` button can't be a `ghost` button.",
+  );
+
+  const prefixCls = getPrefixCls('btn', customizePrefixCls);
+  const autoInsertSpace = autoInsertSpaceInButton !== false;
+
+  // large => lg
+  // small => sm
+  let sizeCls = '';
+  switch (customizeSize || size) {
+    case 'large':
+      sizeCls = 'lg';
+      break;
+    case 'small':
+      sizeCls = 'sm';
+      break;
+    default:
+      break;
   }
 
-  componentWillUnmount() {
-    if (this.timeout) {
-      clearTimeout(this.timeout);
-    }
-    if (this.delayTimeout) {
-      clearTimeout(this.delayTimeout);
-    }
-  }
+  const iconType = innerLoading ? 'loading' : icon;
 
-  handleClick = (e) => {
-    // Add click effect
-    this.setState({ clicked: true });
-    clearTimeout(this.timeout);
-    this.timeout = setTimeout(() => this.setState({ clicked: false }), 500);
-
-    const onClick = this.props.onClick;
-    if (onClick) {
-      onClick(e);
-    }
-  }
-
-  // Handle auto focus when click button in Chrome
-  handleMouseUp = (e) => {
-    if (this.props.onMouseUp) {
-      this.props.onMouseUp(e);
-    }
-  }
-
-  render() {
-    const {
-      type, shape, size = '', className, htmlType, children, icon, prefixCls, ghost, ...others,
-    } = this.props;
-
-    const { loading, clicked } = this.state;
-    // large => lg
-    // small => sm
-    const sizeCls = ({
-      large: 'lg',
-      small: 'sm',
-    })[size] || '';
-
-    const classes = classNames(prefixCls, {
+  const classes = classNames(
+    prefixCls,
+    {
       [`${prefixCls}-${type}`]: type,
       [`${prefixCls}-${shape}`]: shape,
       [`${prefixCls}-${sizeCls}`]: sizeCls,
-      [`${prefixCls}-icon-only`]: !children && icon,
-      [`${prefixCls}-loading`]: loading,
-      [`${prefixCls}-clicked`]: clicked,
-      [`${prefixCls}-background-ghost`]: ghost,
-    }, className);
+      [`${prefixCls}-icon-only`]: !children && children !== 0 && !!iconType,
+      [`${prefixCls}-background-ghost`]: ghost && !isUnborderedButtonType(type),
+      [`${prefixCls}-loading`]: innerLoading,
+      [`${prefixCls}-two-chinese-chars`]: hasTwoCNChar && autoInsertSpace,
+      [`${prefixCls}-block`]: block,
+      [`${prefixCls}-dangerous`]: !!danger,
+      [`${prefixCls}-rtl`]: direction === 'rtl',
+    },
+    className,
+  );
 
-    const iconType = loading ? 'loading' : icon;
-    const iconNode = iconType ? <Icon type={iconType} /> : null;
-    const kids = React.Children.map(children, insertSpace);
+  const iconNode =
+    icon && !innerLoading ? (
+      icon
+    ) : (
+      <LoadingIcon existIcon={!!icon} prefixCls={prefixCls} loading={!!innerLoading} />
+    );
 
+  const kids =
+    children || children === 0
+      ? spaceChildren(children, isNeedInserted() && autoInsertSpace)
+      : null;
+
+  const linkButtonRestProps = omit(rest as AnchorButtonProps & { navigate: any }, ['navigate']);
+  if (linkButtonRestProps.href !== undefined) {
     return (
-      <button
-        {...omit(others, ['loading', 'clicked'])}
-        type={htmlType || 'button'}
-        className={classes}
-        onMouseUp={this.handleMouseUp}
-        onClick={this.handleClick}
-      >
-        {iconNode}{kids}
-      </button>
+      <a {...linkButtonRestProps} className={classes} onClick={handleClick} ref={buttonRef}>
+        {iconNode}
+        {kids}
+      </a>
     );
   }
-}
+
+  const buttonNode = (
+    <button
+      {...(rest as NativeButtonProps)}
+      type={htmlType}
+      className={classes}
+      onClick={handleClick}
+      ref={buttonRef}
+    >
+      {iconNode}
+      {kids}
+    </button>
+  );
+
+  if (isUnborderedButtonType(type)) {
+    return buttonNode;
+  }
+
+  return <Wave>{buttonNode}</Wave>;
+};
+
+const Button = React.forwardRef<unknown, ButtonProps>(InternalButton) as CompoundedComponent;
+
+Button.displayName = 'Button';
+
+Button.Group = Group;
+Button.__ANT_BUTTON = true;
+
+export default Button;

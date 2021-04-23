@@ -17,60 +17,52 @@ Load options lazily with `loadData`.
 
 > Note: `loadData` cannot work with `showSearch`.
 
-````jsx
+```jsx
 import { Cascader } from 'antd';
 
-const options = [{
-  value: 'zhejiang',
-  label: 'Zhejiang',
-  isLeaf: false,
-}, {
-  value: 'jiangsu',
-  label: 'Jiangsu',
-  isLeaf: false,
-}];
+const optionLists = [
+  {
+    value: 'zhejiang',
+    label: 'Zhejiang',
+    isLeaf: false,
+  },
+  {
+    value: 'jiangsu',
+    label: 'Jiangsu',
+    isLeaf: false,
+  },
+];
 
-class LazyOptions extends React.Component {
-  state = {
-    inputValue: '',
-    options,
-  };
-  onChange = (value, selectedOptions) => {
+const LazyOptions = () => {
+  const [options, setOptions] = React.useState(optionLists);
+
+  const onChange = (value, selectedOptions) => {
     console.log(value, selectedOptions);
-    this.setState({
-      inputValue: selectedOptions.map(o => o.label).join(', '),
-    });
-  }
-  loadData = (selectedOptions) => {
+  };
+
+  const loadData = selectedOptions => {
     const targetOption = selectedOptions[selectedOptions.length - 1];
     targetOption.loading = true;
 
     // load options lazily
     setTimeout(() => {
       targetOption.loading = false;
-      targetOption.children = [{
-        label: `${targetOption.label} Dynamic 1`,
-        value: 'dynamic1',
-      }, {
-        label: `${targetOption.label} Dynamic 2`,
-        value: 'dynamic2',
-      }];
-      this.setState({
-        options: [...this.state.options],
-      });
+      targetOption.children = [
+        {
+          label: `${targetOption.label} Dynamic 1`,
+          value: 'dynamic1',
+        },
+        {
+          label: `${targetOption.label} Dynamic 2`,
+          value: 'dynamic2',
+        },
+      ];
+      setOptions([...options]);
     }, 1000);
-  }
-  render() {
-    return (
-      <Cascader
-        options={this.state.options}
-        loadData={this.loadData}
-        onChange={this.onChange}
-        changeOnSelect
-      />
-    );
-  }
-}
+  };
+
+  return <Cascader options={options} loadData={loadData} onChange={onChange} changeOnSelect />;
+};
 
 ReactDOM.render(<LazyOptions />, mountNode);
-````
+```

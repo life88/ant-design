@@ -1,57 +1,53 @@
-import React from 'react';
-import Icon from '../icon';
+import * as React from 'react';
+import CloseCircleFilled from '@ant-design/icons/CloseCircleFilled';
+import SearchOutlined from '@ant-design/icons/SearchOutlined';
+
 import Input from '../input';
 
-export interface SearchProps {
+export interface TransferSearchProps {
   prefixCls?: string;
   placeholder?: string;
-  onChange?: (e: React.FormEvent<any>) => void;
-  handleClear?: (e: React.MouseEvent<any>) => void;
-  value?: any;
+  onChange?: (e: React.FormEvent<HTMLElement>) => void;
+  handleClear?: (e: React.MouseEvent<HTMLElement>) => void;
+  value?: string;
+  disabled?: boolean;
 }
 
-export default class Search extends React.Component<SearchProps, any> {
-  static defaultProps = {
-    placeholder: '',
-  };
+export default function Search(props: TransferSearchProps) {
+  const { placeholder = '', value, prefixCls, disabled, onChange, handleClear } = props;
 
-  handleChange = (e) => {
-    const onChange = this.props.onChange;
-    if (onChange) {
-      onChange(e);
-    }
-  }
+  const handleChange = React.useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      onChange?.(e);
+    },
+    [onChange],
+  );
 
-  handleClear = (e) => {
+  const handleClearFn = (e: React.MouseEvent<HTMLAnchorElement>) => {
     e.preventDefault();
-
-    const handleClear = this.props.handleClear;
-    if (handleClear) {
+    if (!disabled && handleClear) {
       handleClear(e);
     }
-  }
+  };
 
-  render() {
-    const { placeholder, value, prefixCls } = this.props;
-    const icon = (value && value.length > 0) ? (
-      <a href="#" className={`${prefixCls}-action`} onClick={this.handleClear}>
-        <Icon type="cross-circle" />
-      </a>
-    ) : (
-      <span className={`${prefixCls}-action`}><Icon type="search" /></span>
-    );
-
-    return (
-      <div>
-        <Input
-          placeholder={placeholder}
-          className={prefixCls}
-          value={value}
-          ref="input"
-          onChange={this.handleChange}
-        />
-        {icon}
-      </div>
-    );
-  }
+  return (
+    <>
+      <Input
+        placeholder={placeholder}
+        className={prefixCls}
+        value={value}
+        onChange={handleChange}
+        disabled={disabled}
+      />
+      {value && value.length > 0 ? (
+        <a className={`${prefixCls}-action`} onClick={handleClearFn}>
+          <CloseCircleFilled />
+        </a>
+      ) : (
+        <span className={`${prefixCls}-action`}>
+          <SearchOutlined />
+        </span>
+      )}
+    </>
+  );
 }
